@@ -58,7 +58,7 @@ if not is_valid_url(PLEX_URL):
     app.logger.error(f"Error: {PLEX_URL} is not a valid URL.")
     sys.exit(1)
 
-def connect_to_plex(url, token, max_retries=5):
+def connect_to_plex(url, token, max_retries=6):
     retry_delay = 5  # seconds
     for attempt in range(max_retries):
         try:
