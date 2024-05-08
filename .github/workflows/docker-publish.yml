@@ -1,5 +1,5 @@
 name: Build and Push Docker Image to GitHub Packages
- 
+
 on:
   push:
     branches:
