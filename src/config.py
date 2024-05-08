@@ -1,7 +1,7 @@
 from flask import Flask
 from plexapi.server import PlexServer
 from urllib.parse import urlparse
-import os, sys, logging
+import os, sys, logging, time
 
 app = Flask(__name__)
 
@@ -58,4 +58,19 @@ if not is_valid_url(PLEX_URL):
     app.logger.error(f"Error: {PLEX_URL} is not a valid URL.")
     sys.exit(1)
 
-plex = PlexServer(PLEX_URL, PLEX_TOKEN)
+def connect_to_plex(url, token, max_retries=5):
+    retry_delay = 5  # seconds
+    for attempt in range(max_retries):
+        try:
+            plex = PlexServer(url, token)
+            return plex  # Successfully connected, return the server object
+        except Exception as e:
+            if attempt < max_retries - 1:
+                logging.warning(f"Failed to connect to Plex server, retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+            else:
+                logging.error(f"Max retries exceeded for connecting to Plex server: {str(e)}")
+                raise
+
+plex = connect_to_plex(PLEX_URL, PLEX_TOKEN)
