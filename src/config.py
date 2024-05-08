@@ -63,15 +63,15 @@ def connect_to_plex(url, token, max_retries=6):
     for attempt in range(max_retries):
         try:
             plex = PlexServer(url, token)
-            logging.info("Succesfully connected to Plex")
+            app.logger.info("Succesfully connected to Plex")
             return plex
         except Exception as e:
             if attempt < max_retries - 1:
-                logging.warning(f"Failed to connect to Plex server, retrying in {retry_delay} seconds...")
+                app.logger.warning(f"Failed to connect to Plex server, retrying in {retry_delay} seconds...")
                 time.sleep(retry_delay)
                 retry_delay *= 2  # Exponential backoff
             else:
-                logging.error(f"Max retries exceeded for connecting to Plex server: {str(e)}")
+                app.logger.error(f"Max retries exceeded for connecting to Plex server: {str(e)}")
                 raise
 
 plex = connect_to_plex(PLEX_URL, PLEX_TOKEN)
