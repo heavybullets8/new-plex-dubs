@@ -11,6 +11,7 @@ from plexapi.exceptions import NotFound  # type: ignore[import-untyped]
 from plexapi.video import Episode, Show  # type: ignore[import-untyped]
 
 from .config import app, plex, SONARR_LIBRARY
+from .logger import log_event, log_action, log_error
 from .shared import (
     is_english_dubbed,
     manage_collection,
@@ -42,7 +43,7 @@ def get_episode_from_data(
     Returns:
         Episode object if found, None otherwise.
     """
-    app.logger.info(f"Attempting to find show '{show_name}' in Plex...")
+    log_action(app.logger, "fetch_show", show=show_name, library=LIBRARY_NAME, status="searching")
     library_section = plex.library.section(LIBRARY_NAME)  # type: ignore[no-untyped-call]
     retries: int = 0
     show: Show | None = None
@@ -58,45 +59,42 @@ def get_episode_from_data(
             )
             if exact_match:
                 show = exact_match
-                app.logger.info(f"Exact match found: {show.title}")
+                log_action(app.logger, "fetch_show", show=show.title, status="found", match_type="exact")
                 break
 
-            app.logger.info(f"No exact match found for '{show_name}'. Retrying...")
             time.sleep(delay)
         except NotFound:
-            app.logger.info(f"Show '{show_name}' not found. Retrying...")
             time.sleep(delay)
 
         retries += 1
 
     # Fallback to fuzzy matching
     if not show:
-        app.logger.info(f"Attempting fuzzy match for show '{show_name}'.")
         fuzzy_result = get_fuzzy_match(library_section, show_name)
         if fuzzy_result and isinstance(fuzzy_result, Show):
             show = fuzzy_result
-            app.logger.info(f"Found show by fuzzy match: {show.title}")
+            log_action(app.logger, "fetch_show", show=show.title, status="found", match_type="fuzzy")
         else:
-            app.logger.error(f"Show '{show_name}' not found in Plex after retries and fuzzy match.")
+            log_error(app.logger, "Show not found", show=show_name, attempts=max_retries)
             return None
 
     # Try to find the episode
-    app.logger.info(f"Verifying the episode for '{show.title}' is in Plex...")
+    log_action(app.logger, "fetch_episode", show=show.title, season=season_number, episode=episode_number, status="searching")
     retries = 0
     while retries < max_retries:
         try:
             episode: Episode = show.episode(season=season_number, episode=episode_number)  # type: ignore[assignment]
-            app.logger.info(f"Found episode by season and number: {episode.title}")
+            log_action(app.logger, "fetch_episode", episode=episode.title, status="found")
             return episode
         except NotFound:
-            app.logger.info("Episode not found. Retrying...")
             time.sleep(delay)
         except Exception as e:
-            app.logger.error(f"Error fetching episode by season and number: {e}")
+            log_error(app.logger, "Error fetching episode", exception=str(e), season=season_number, episode=episode_number)
         retries += 1
 
-    app.logger.error(
-        f"Episode for Season {season_number}, Episode {episode_number} not found in '{show.title}' after retries."
+    log_error(
+        app.logger, "Episode not found after retries",
+        show=show.title, season=season_number, episode=episode_number, attempts=max_retries
     )
     return None
 
@@ -122,7 +120,7 @@ def sonarr_handle_download_event(
         if episode:
             manage_collection(LIBRARY_NAME, episode)
     except Exception as e:
-        app.logger.error(f"Error processing request: {e}")
+        log_error(app.logger, "Error processing download event", exception=str(e), library=LIBRARY_NAME)
 
 
 def process_download_event(
@@ -148,12 +146,20 @@ def process_download_event(
         is_recent_release: Whether this is a recent release.
     """
     if is_upgrade:
-        app.logger.info(f"Processing upgrade for: {show_name} - {episode_name} (ID: {episode_id})")
+        log_action(
+            app.logger, "process_upgrade",
+            show=show_name, episode=episode_name, episode_id=episode_id
+        )
     elif is_recent_release:
-        app.logger.info(f"Processing recent release for: {show_name} - {episode_name} (ID: {episode_id})")
+        log_action(
+            app.logger, "process_recent_release",
+            show=show_name, episode=episode_name, episode_id=episode_id
+        )
     else:
-        app.logger.info(
-            f"Skipping: {show_name} - {episode_name} (ID: {episode_id}) - Not an upgrade or recent release"
+        log_action(
+            app.logger, "skip_episode",
+            show=show_name, episode=episode_name, episode_id=episode_id,
+            reason="not upgrade or recent release"
         )
         return
 
@@ -163,7 +169,7 @@ def process_download_event(
     ).start()
 
 
-def sonarr_log_event_details(
+def sonarr_log_webhook(
     event_type: str,
     show_name: str,
     episode_name: str,
@@ -174,7 +180,7 @@ def sonarr_log_event_details(
     season_number: int,
     episode_number: int
 ) -> None:
-    """Log details about a Sonarr webhook event.
+    """Log details about a Sonarr webhook event in structured format.
 
     Args:
         event_type: Type of the webhook event.
@@ -187,16 +193,19 @@ def sonarr_log_event_details(
         season_number: Season number.
         episode_number: Episode number.
     """
-    app.logger.info(" ")
-    app.logger.info("Sonarr Webhook Received")
-    app.logger.info(f"Event Type: {event_type}")
-    app.logger.info(f"Show Title: {show_name}")
-    app.logger.info(f"Episode: {episode_name} - ID: {episode_id}")
-    app.logger.info(f"Season: {season_number}")
-    app.logger.info(f"Episode: {episode_number}")
-    app.logger.info(f"Air Date: {air_date}")
-    app.logger.info(f"English Dubbed: {is_dubbed}")
-    app.logger.info(f"Is Upgrade: {is_upgrade}")
+    log_event(
+        app.logger, "webhook",
+        source="sonarr",
+        event_type=event_type,
+        show=show_name,
+        episode=episode_name,
+        episode_id=episode_id,
+        season=season_number,
+        ep_num=episode_number,
+        air_date=air_date if air_date else "unknown",
+        dubbed=is_dubbed,
+        upgrade=is_upgrade
+    )
 
 
 def sonarr_webhook(request: Request) -> tuple[str, int]:
@@ -221,7 +230,7 @@ def sonarr_webhook(request: Request) -> tuple[str, int]:
 
     is_recent_release: bool = is_recent_or_upcoming_release(air_date)
 
-    sonarr_log_event_details(
+    sonarr_log_webhook(
         event_type, show_name, episode_name, episode_id, is_dubbed,
         is_upgrade, air_date, season_number, episode_number
     )
@@ -229,13 +238,13 @@ def sonarr_webhook(request: Request) -> tuple[str, int]:
     if event_type == 'EpisodeFileDelete' and data.get('deleteReason') == 'upgrade' and is_dubbed:
         handle_deletion_event(episode_id)
     elif was_media_deleted(episode_id):
-        app.logger.info("Skipping as it was a previous upgrade of an English dubbed episode.")
+        log_action(app.logger, "skip_episode", reason="previous upgrade of dubbed episode", episode_id=episode_id)
     elif event_type == 'Download' and is_dubbed and SONARR_LIBRARY:
         process_download_event(
             SONARR_LIBRARY, show_name, episode_name, episode_id,
             season_number, episode_number, is_upgrade, is_recent_release
         )
     else:
-        app.logger.info("Skipping: does not meet criteria for processing.")
+        log_action(app.logger, "skip_episode", reason="does not meet criteria", event=event_type, dubbed=is_dubbed)
 
     return "Webhook received", 200

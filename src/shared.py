@@ -11,6 +11,7 @@ from plexapi.video import Episode, Movie  # type: ignore[import-untyped]
 from plexapi.library import LibrarySection  # type: ignore[import-untyped]
 
 from .config import app, plex, MAX_COLLECTION_SIZE, MAX_DATE_DIFF
+from .logger import log_action, log_warning
 
 
 def is_english_dubbed(data: dict[str, Any]) -> bool:
@@ -57,7 +58,7 @@ def get_fuzzy_match(
         matched_title: str = result[0]
         return library_section.get(matched_title)
     else:
-        app.logger.info(f"No close match found for '{query_title}' with cutoff score of {score_cutoff}.")
+        log_action(app.logger, "fuzzy_match_failed", query=query_title, cutoff=score_cutoff)
         return None
 
 
@@ -76,49 +77,54 @@ def manage_collection(
         is_movie: Whether the media is a movie (vs episode).
     """
     media_type: str = 'movie' if is_movie else 'episode'
-    app.logger.info(f"Managing and sorting collection for {media_type}: {media.title}")
     collection = None
 
     # Check if collection exists and retrieve it
     for col in plex.library.section(LIBRARY_NAME).collections():
         if col.title == collection_name:
             collection = col
-            app.logger.info(f"Collection '{collection_name}' exists.")
             break
 
     # Create collection if it doesn't exist
     if collection is None:
-        app.logger.info(f"Creating new collection '{collection_name}'.")
+        log_action(app.logger, "create_collection", collection=collection_name, media=media.title, media_type=media_type)
         collection = plex.library.section(LIBRARY_NAME).createCollection(title=collection_name, items=[media])
-        # Set collection sort
         collection.sortUpdate(sort="custom")
         return
 
     # Add media to collection if not present
     if media not in collection.items():
-        app.logger.info(f"Adding {media_type} '{media.title}' to collection '{collection_name}'.")
         collection.addItems([media])
-        # Move the media to the front of the collection
         collection.moveItem(media, after=None)
-        app.logger.info(f"Moved {media_type} '{media.title}' to the front of collection.")
+        log_action(
+            app.logger, "add_to_collection",
+            media=media.title, media_type=media_type,
+            collection=collection_name, status="added_to_front"
+        )
     else:
-        app.logger.info(f"{media_type} '{media.title}' already in collection.")
+        log_action(
+            app.logger, "skip_duplicate",
+            media=media.title, media_type=media_type,
+            collection=collection_name, reason="already in collection"
+        )
 
     # Check if the collection size exceeds the maximum allowed
-    if len(collection.items()) >= MAX_COLLECTION_SIZE:
-        app.logger.info("Trimming the collection to the maximum allowed size...")
-
+    current_size = len(collection.items())
+    if current_size >= MAX_COLLECTION_SIZE:
         items = collection.items()
-        num_items_to_remove: int = len(items) - MAX_COLLECTION_SIZE
-        # Select items to be removed based on the collection exceeding the MAX_COLLECTION_SIZE
+        num_items_to_remove: int = current_size - MAX_COLLECTION_SIZE
         items_to_remove = items[-num_items_to_remove:]
 
-        # Log the titles of the items that are to be removed
-        for item in items_to_remove:
-            app.logger.info(f"Removing item: '{item.title}' from the collection.")
-
-        # Remove the identified items from the collection
+        removed_titles = [item.title for item in items_to_remove]  # type: ignore[misc]
         collection.removeItems(items_to_remove)
+
+        log_action(
+            app.logger, "trim_collection",
+            collection=collection_name,
+            removed_count=num_items_to_remove,
+            new_size=MAX_COLLECTION_SIZE,
+            removed_items=", ".join(removed_titles[:3]) + ("..." if len(removed_titles) > 3 else "")
+        )
 
 
 def trim_file(file_path: str, max_entries: int) -> None:
@@ -149,7 +155,7 @@ def handle_deletion_event(media_id: int) -> None:
         file.seek(0)  # Go to the beginning of the file
         if str(media_id) not in file.read():
             file.write(f"{media_id}\n")
-            app.logger.info(f"Added {media_id} to deletion record.")
+            log_action(app.logger, "record_deletion", media_id=media_id, status="recorded")
         fcntl.flock(file.fileno(), fcntl.LOCK_UN)
 
     trim_file("/tmp/deleted_media_ids.txt", 100)  # Limit to 100 entries
@@ -170,7 +176,7 @@ def is_recent_or_upcoming_release(date_str: str | None) -> bool:
     try:
         release_or_air_date: datetime.date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
     except ValueError:
-        app.logger.warning(f"Invalid date format: {date_str}")
+        log_warning(app.logger, "Invalid date format", date=date_str)
         return False
 
     current_date: datetime.date = datetime.datetime.now(datetime.UTC).date()

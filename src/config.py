@@ -17,11 +17,13 @@ app: Flask = Flask(__name__)
 for handler in app.logger.handlers:
     app.logger.removeHandler(handler)
 
-# Set up custom logging
+# Set up custom logging with ISO 8601 timestamps
 log_handler: logging.Handler = logging.StreamHandler()
-log_handler.setFormatter(logging.Formatter(
-    '[%(asctime)s] %(levelname)s in %(module)s: %(message)s'
-))
+log_formatter = logging.Formatter(
+    fmt='[%(asctime)s] %(levelname)-5s %(module)s.%(message)s',
+    datefmt='%Y-%m-%dT%H:%M:%S'
+)
+log_handler.setFormatter(log_formatter)
 app.logger.addHandler(log_handler)
 app.logger.setLevel(logging.INFO)
 
@@ -81,7 +83,7 @@ if not SONARR_LIBRARY and not RADARR_LIBRARY:
 # Check for environment variable errors
 if env_errors:
     for error in env_errors:
-        app.logger.error(error)
+        app.logger.error(f"config_error\n  error={error}")
     sys.exit(1)
 
 
@@ -100,7 +102,7 @@ def is_valid_url(url: str) -> bool:
 
 # Validate PLEX_URL
 if PLEX_URL and not is_valid_url(PLEX_URL):
-    app.logger.error(f"Error: {PLEX_URL} is not a valid URL.")
+    app.logger.error(f"invalid_url\n  url={PLEX_URL}")
     sys.exit(1)
 
 
@@ -124,23 +126,23 @@ def connect_to_plex(url: str, token: str, max_retries: int = 6) -> PlexServer:
     for attempt in range(max_retries):
         try:
             plex_server: PlexServer = PlexServer(url, token)
-            app.logger.info("Successfully connected to Plex")
+            app.logger.info(f"plex_connected\n  url={url}")
             return plex_server
         except Exception as e:
             last_exception = e
             if attempt < max_retries - 1:
-                app.logger.warning(f"Failed to connect to Plex server, retrying in {retry_delay} seconds...")
+                app.logger.warning(f"plex_connection_retry\n  attempt={attempt + 1} max_retries={max_retries} retry_in={retry_delay}s")
                 time.sleep(retry_delay)
                 retry_delay *= 2  # Exponential backoff
 
     # If we get here, all retries failed
-    app.logger.error(f"Max retries exceeded for connecting to Plex server: {str(last_exception)}")
+    app.logger.error(f"plex_connection_failed\n  error={str(last_exception)} attempts={max_retries}")
     raise last_exception or Exception("Failed to connect to Plex server")
 
 
 # Ensure PLEX_URL and PLEX_TOKEN are not None before connecting
 if PLEX_URL is None or PLEX_TOKEN is None:
-    app.logger.error("PLEX_URL or PLEX_TOKEN is not set")
+    app.logger.error("config_error\n  error=PLEX_URL or PLEX_TOKEN not set")
     sys.exit(1)
 
 plex: PlexServer = connect_to_plex(PLEX_URL, PLEX_TOKEN)
