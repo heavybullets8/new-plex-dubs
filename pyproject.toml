@@ -11,7 +11,7 @@ keywords = ["plex", "anime", "dubbed", "webhook", "automation"]
 
 [project.optional-dependencies]
 dev = [
-    "mypy==1.11.2",
+    "mypy==1.18.2",
     "types-requests",
 ]
 
