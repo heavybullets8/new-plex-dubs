@@ -1,11 +1,14 @@
 # Use an official Python runtime as a parent image
-FROM python:3.9-slim
+FROM python:3.11-slim
 
 # Set the working directory in the container
 WORKDIR /app
 
-# Install Flask, PlexAPI, fuzzywuzzy, python-Levenshtein, and Gunicorn
-RUN pip install Flask PlexAPI fuzzywuzzy python-Levenshtein gunicorn
+# Copy requirements file
+COPY requirements.txt .
+
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the current directory contents into the container at /app
 COPY . /app
@@ -23,4 +26,4 @@ ENV MAX_DATE_DIFF 4
 EXPOSE $PORT
 
 # Run app.py using Gunicorn when the container launches
-CMD gunicorn --log-level info -w 2 -b 0.0.0.0:$PORT app:app
+CMD gunicorn --log-level info -w 1 --threads 4 -b 0.0.0.0:$PORT app:app

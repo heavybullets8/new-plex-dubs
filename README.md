@@ -68,4 +68,3 @@ This container listens for webhooks from Sonarr and Radarr, and when it receives
 
 I made this purely for personal use, but published it in the event anyone else found it useful. I likely will not offer any type of support.
 
-The Plex token is stored as an environment variable, which is unsafe, so use this at your own risk.

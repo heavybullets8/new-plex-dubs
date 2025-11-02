@@ -1,0 +1,19 @@
+{
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "standard",
+  "reportMissingTypeStubs": false,
+  "reportUnknownMemberType": false,
+  "reportUnknownVariableType": false,
+  "reportUnknownArgumentType": false,
+  "reportAny": false,
+  "reportExplicitAny": false,
+  "reportPrivateUsage": false,
+  "reportUnknownParameterType": false,
+  "reportMissingParameterType": false,
+  "exclude": [
+    "**/__pycache__",
+    "**/node_modules",
+    ".venv",
+    "venv"
+  ]
+}

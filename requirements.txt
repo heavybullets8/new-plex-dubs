@@ -1,0 +1,4 @@
+Flask==3.1.2
+PlexAPI==4.17.0
+rapidfuzz==3.14.1
+gunicorn==23.0.0
